@@ -1,0 +1,14 @@
+USB/
+originals/
+test-build/
+__pycache__/
+*.pyc
+zig-global-cache/
+zig-local-cache/
+build-result.json
+*.rom
+*.efi
+*.EFI
+ATTEMPT.LCK
+REPORT.TXT
+SAFETY.LOG
