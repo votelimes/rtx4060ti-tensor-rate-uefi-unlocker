@@ -2,8 +2,8 @@
 
 This experimental application writes GPU registers and runs a firmware payload.
 It can hang the GPU or firmware, blank the display, or require a physical power
-cycle. Use only on hardware you own and can recover. Simulation and one successful
-hardware boot are not guarantees against hardware or data loss.
+cycle. Use only on hardware you own and can recover. Simulation and successful
+hardware boots are not guarantees against hardware or data loss.
 
 ## Containment implemented
 

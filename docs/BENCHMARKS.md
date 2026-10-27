@@ -34,5 +34,11 @@ locally with CUDA 13.1.115 for sm_89. Its 100 W after-unlock results are include
 measurements.json. No local stock run exists for this probe. Its simple all-ones
 check does not establish general numerical accuracy.
 
-Measurements are from one physical board and one successful unlock boot. Larger
+The original measurements above are from one physical board and the 0.2.5 unlock boot. Larger
 instruction-rate gains do not imply proportional end-to-end training gains.
+
+A second successful boot, using the 0.2.6 automatic entry point, was verified on
+2026-10-28. The user supplied a separate `mma_bench 100000 20` result with the
+reduced power limit removed. Its exact power setting, binary hash and correctness
+checks were not supplied. Keep this separate from the original 100 W comparison
+and instruction probe. See [the follow-up record](VALIDATION-2026-10-28.md).

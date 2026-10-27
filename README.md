@@ -13,8 +13,10 @@ It does not enable physically absent cores or increase VRAM.
 - **0.2.5:** one successful physical unlock boot, GOP recovery and Windows handoff.
   Selectors and effective readout matched after recovery. CUDA/PyTorch workloads ran.
 - **0.2.6 (this source):** automatic start after a five-second cancellation window;
-  179 application simulation scenarios passed with ASan/UBSan. This automatic
-  entry point has **not** been tested on the physical machine.
+  179 application simulation scenarios passed with ASan/UBSan. **Physically verified
+  on 2026-10-28 (RUN08):** automatic countdown, model/VRAM checks, unlock and GOP
+  recovery completed; the user confirmed Windows boot and faster PyTorch workloads.
+  See [hardware validation](docs/VALIDATION-2026-10-28.md).
 - The unchanged transaction core previously passed 45 simulation scenarios.
   Five journal-decoder unit tests are also available.
 - No long-term stability, repeat-boot reliability or persistence guarantee.
@@ -143,3 +145,12 @@ python3 test.py --group all --rom /private/AD106.rom --prom /private/PROM.BIN
 The test harness verifies the input hashes before use. PCI/MMIO/DMA, firmware
 execution and Windows handoff are simulated; passing tests cannot prove hardware
 safety. Source and dependency license information is in [NOTICE.md](NOTICE.md).
+
+## Follow-up instruction benchmark (2026-10-28)
+
+With the reduced power limit removed (user-reported; exact wattage not captured),
+`./mma_bench 100000 20` reached **90.5 TFLOPS FP16/FP32**, **90.2 TFLOPS BF16/FP32**
+and **182.1 TFLOPS FP8 E4M3**. INT8 reached **181.6 TOPS**.
+These are after-unlock results, not a matched before/after speedup measurement.
+The user also reported noticeably faster PyTorch computations; no new quantified
+PyTorch comparison was provided. See [validation and full samples](docs/VALIDATION-2026-10-28.md).

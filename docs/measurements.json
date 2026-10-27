@@ -959,9 +959,9 @@
     "seconds": 1.295504093170166
   },
   "limits": [
-    "One successful unlock boot on one physical board",
+    "Original 2026-10-27 measurements: one 0.2.5 unlock boot on one physical board",
     "No stock baseline for the instruction probe",
-    "0.2.6 automatic entry point has only simulation validation",
     "No long-term or reboot-persistence validation"
-  ]
+  ],
+  "follow_up_record": "VALIDATION-2026-10-28.md"
 }
