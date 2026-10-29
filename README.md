@@ -1,4 +1,4 @@
-# RTX 4060 Ti UEFI unlocker
+# RTX 4060 Ti tensor-rate UEFI unlocker
 
 Experimental, board-specific UEFI application for changing Ada tensor throughput
 selectors before loading Windows. Derived from the projects credited in [NOTICE.md](NOTICE.md).
