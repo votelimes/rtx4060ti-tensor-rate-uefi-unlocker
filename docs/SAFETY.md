@@ -11,8 +11,7 @@ hardware boots are not guarantees against hardware or data loss.
 - Cold selector masks and effective readout checks; three stability samples and
   comparison across preflight, countdown and firmware-driver release.
 - Asset length/hash checks before use; Windows loader preloaded before GPU release.
-- Five-second automatic-start delay with Esc cancellation; no automatic retry.
-- Persistent one-attempt lock, written/flushed/read back before driver release.
+- Five-second manual U window; timeout or Esc starts Windows without GPU changes.
 - Explicit firmware-driver ownership checks; a bounded nonrecursive child walk
   during reconnection (16 nodes, maximum depth four).
 - Checked 32-bit DMA mappings and bus-master containment. Resources are retained
@@ -35,6 +34,16 @@ The application does not enforce a universal NVIDIA-driver signature allowlist.
 Keep the firmware video policy on UEFI; do not infer that every GOP provider is
 the native NVIDIA driver.
 
+## Manual boot choice (0.2.9)
+
+No GPU discovery, driver release or GPU register writes occur before U. Timeout
+or Esc loads Windows normally. There is no persistent attempt-file mechanism.
+Every unlock still requires U and all preflight checks. Review failed-attempt
+logs and fully power off before deliberately requesting another unlock.
+During hibernation resume, use the normal Windows path; acceleration persistence
+has not been established. Loader, logging or keyboard errors never authorize an
+unlock. A failing loader returns to firmware without falling through to mutation.
+
 ## If something goes wrong
 
 - Before GPU release, a rejected preflight reports its stage and returns to
@@ -43,8 +52,8 @@ the native NVIDIA driver.
 - If the display goes blank and Windows does not appear within 60 seconds, power
   off. Remove the USB after shutdown, then boot the normal Windows entry.
 - Reconnect the USB after normal boot and save both logs before another attempt.
-- Keep `ATTEMPT.LCK` until the preceding attempt has been reviewed and the machine
-  has been powered off. Archive it deliberately; do not add automatic lock deletion.
+- After a failed attempt, review the logs and fully power off before requesting
+  another attempt with U.
 
 Removing the USB while the UEFI program runs is not a recovery procedure and may
 destroy the last available evidence. This program has no remote recovery channel.

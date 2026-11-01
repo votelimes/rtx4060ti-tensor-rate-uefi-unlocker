@@ -42,3 +42,7 @@ A second successful boot, using the 0.2.6 automatic entry point, was verified on
 reduced power limit removed. Its exact power setting, binary hash and correctness
 checks were not supplied. Keep this separate from the original 100 W comparison
 and instruction probe. See [the follow-up record](VALIDATION-2026-10-28.md).
+
+The 2026-11-01 user-supplied `mma_bench 50000 10` comparison is recorded
+[separately](VALIDATION-2026-11-01.md), with all samples in
+[mma-2026-11-01.json](mma-2026-11-01.json). It is not a new PyTorch training measurement.

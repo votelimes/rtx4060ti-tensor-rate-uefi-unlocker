@@ -105,9 +105,8 @@ static const char *handoff_phases[]={
  "BEFORE_PCI_REFRESH","AFTER_PCI_REFRESH","BEFORE_DISPLAY_CHECK","AFTER_DISPLAY_CHECK",
  "BEFORE_PCI_VERIFY","AFTER_PCI_VERIFY","BEFORE_POST_GOP_SELECTORS","AFTER_POST_GOP_SELECTORS"};
 static unsigned stability_reads;
-static UINT8 journal_data[8192],lock_data[512];
-static UINTN journal_bytes,lock_bytes,journal_writes;
-static BOOLEAN lock_exists;
+static UINT8 journal_data[8192];
+static UINTN journal_bytes,journal_writes;
 static EFI_GUID volume_info_guid=EFI_FILE_SYSTEM_INFO_ID;
 static UINTN prom_dump_calls;
 static GU_ASSET originals[5];
@@ -135,7 +134,7 @@ static EFI_STATUS EFIAPI app_output(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *p,CHAR16 *s
   CHECK(p==&conout && !GuScreenDetached);char text[2048];narrow(text,sizeof(text),s);
   if(safety_case==14)return EFI_DEVICE_ERROR;
   UINTN used=strlen(fake.log),n=strlen(text);if(n<sizeof(fake.log)-used)memcpy(fake.log+used,text,n+1);
-  if(strstr(fake.log,"AUTO START in 5 seconds"))prompt=TRUE;
+  if(strstr(fake.log,"Press U within 5 seconds"))prompt=TRUE;
   if(strstr(fake.log,"POWER OFF"))halted=TRUE;
   return EFI_SUCCESS;
 }
@@ -287,11 +286,11 @@ static EFI_STATUS EFIAPI stale_read(EFI_PCI_IO_PROTOCOL *p,EFI_PCI_IO_PROTOCOL_W
   (void)p;(void)w;(void)o;(void)n;(void)d;CHECK(0);return EFI_DEVICE_ERROR;
 }
 static EFI_STATUS EFIAPI disconnect(EFI_HANDLE h,EFI_HANDLE agent,EFI_HANDLE child) {
-  CHECK(lock_exists && lock_bytes>0 && journal_bytes==8192 && journal_writes>2);
+  CHECK(journal_bytes==8192 && journal_writes>2);
   CHECK(windows_loaded && GuScreenDetached);
   CHECK(h==H(3) && agent==H(8) && agent!=owner_binding.ImageHandle && !child);
-  CHECK(current_tpl==TPL_APPLICATION && key_calls>=50 && prompt && key_reset && !disconnect_calls && !exclusive);
-  CHECK(strstr(report_text,"AUTO START: countdown complete"));
+  CHECK(current_tpl==TPL_APPLICATION && key_calls>=1 && prompt && key_reset && !disconnect_calls && !exclusive);
+  CHECK(strstr(report_text,"MANUAL U: new attempt"));
   CHECK(GuAssets[4].firmware.data && !fake.mmio_writes && !fake.flrs && !fake.maps);
   CHECK(strstr(report_text,"release RTX firmware driver"));disconnect_calls++;
   if(app_mode==APP_HANDOFF_FAIL){config[4]|=4;return EFI_DEVICE_ERROR;}
@@ -416,9 +415,7 @@ static EFI_STATUS EFIAPI file_open(EFI_FILE_PROTOCOL *f,EFI_FILE_PROTOCOL **out,
   } else if(v->kind==2 && !strcmp(path,"SAFETY.LOG")) {
     CHECK(mode&EFI_FILE_MODE_CREATE);target=12;
   } else if(v->kind==1 && !strcmp(path,"ATTEMPT.LCK")) {
-    if(!(mode&EFI_FILE_MODE_CREATE) && !lock_exists)return EFI_NOT_FOUND;
-    if(mode&EFI_FILE_MODE_CREATE)lock_exists=TRUE;
-    target=13;
+    CHECK(0); /* Removed lock must never be accessed. */
   } else if(v->kind==1) {
     for(int i=0;i<5;i++) {
       const char *base=strrchr(originals[i].name,'/')+1;
@@ -442,11 +439,11 @@ static EFI_STATUS EFIAPI file_info(EFI_FILE_PROTOCOL *f,EFI_GUID *g,UINTN *size,
 }
 static EFI_STATUS EFIAPI file_read(EFI_FILE_PROTOCOL *f,UINTN *n,VOID *data) {
   FILE_FAKE *v=(FILE_FAKE *)f;CHECK(v->open && v->kind>=4);
-  if(v->kind==12 || v->kind==13) {
-    UINTN total=v->kind==12?journal_bytes:lock_bytes;
+  if(v->kind==12) {
+    UINTN total=journal_bytes;
     CHECK(v->position<=total);if(*n>total-v->position)*n=total-v->position;
-    memcpy(data,(v->kind==12?journal_data:lock_data)+v->position,*n);v->position+=*n;
-    if((safety_case==5 && v->kind==12)||(safety_case==10 && v->kind==13))((UINT8 *)data)[0]^=1;
+    memcpy(data,journal_data+v->position,*n);v->position+=*n;
+    if(safety_case==5 && v->kind==12)((UINT8 *)data)[0]^=1;
     if(safety_case==6 && v->kind==12 && *n)(*n)--;
     return EFI_SUCCESS;
   }
@@ -459,8 +456,8 @@ static EFI_STATUS EFIAPI file_read(EFI_FILE_PROTOCOL *f,UINTN *n,VOID *data) {
 static EFI_STATUS EFIAPI file_write(EFI_FILE_PROTOCOL *f,UINTN *n,VOID *data) {
   CHECK(current_tpl==TPL_APPLICATION);
   FILE_FAKE *v=(FILE_FAKE *)f;CHECK(v->open && data);
-  if(v->kind==12 || v->kind==13) {
-    CHECK(v->position+*n<=(v->kind==12?sizeof(journal_data):sizeof(lock_data)));
+  if(v->kind==12) {
+    CHECK(v->position+*n<=sizeof(journal_data));
     if(v->kind==12 && tree_case>=12 && tree_case<=15) {
       const char *failures[]={"phase=BEFORE_CHILD_CONNECT_01\n","phase=AFTER_CHILD_CONNECT_01\n","phase=BEFORE_CHILD_ENUM_00\n","phase=AFTER_CHILD_ENUM_00\n"};
       char snapshot[4097];CHECK(*n<=4096);memcpy(snapshot,data,*n);snapshot[*n]=0;
@@ -472,12 +469,12 @@ static EFI_STATUS EFIAPI file_write(EFI_FILE_PROTOCOL *f,UINTN *n,VOID *data) {
       snprintf(needle,sizeof(needle),"phase=%s\n",handoff_phases[handoff_case-5]);
       if(strstr(snapshot,needle))return EFI_DEVICE_ERROR;
     }
-    if((safety_case==3 && v->kind==12)||(safety_case==8 && v->kind==13))return EFI_VOLUME_FULL;
+    if(safety_case==3 && v->kind==12)return EFI_VOLUME_FULL;
     if(safety_case==4 && v->kind==12 && *n)(*n)--;
     if(safety_case==11 && v->kind==12 && Gu.started)return EFI_NO_MEDIA;
     if(safety_case==16 && v->kind==12 && Gu.started && *n)(*n)/=2;
-    memcpy((v->kind==12?journal_data:lock_data)+v->position,data,*n);v->position+=*n;
-    UINTN *total=v->kind==12?&journal_bytes:&lock_bytes;if(v->position>*total)*total=v->position;
+    memcpy(journal_data+v->position,data,*n);v->position+=*n;
+    UINTN *total=&journal_bytes;if(v->position>*total)*total=v->position;
     if(v->kind==12)journal_writes++;
     return EFI_SUCCESS;
   }
@@ -506,12 +503,12 @@ static EFI_STATUS EFIAPI file_write(EFI_FILE_PROTOCOL *f,UINTN *n,VOID *data) {
 }
 static EFI_STATUS EFIAPI file_flush(EFI_FILE_PROTOCOL *f) {
   int kind=((FILE_FAKE *)f)->kind;
-  if((safety_case==7 && kind==12)||(safety_case==9 && kind==13))return EFI_DEVICE_ERROR;
+  if(safety_case==7 && kind==12)return EFI_DEVICE_ERROR;
   if(safety_case==12 && kind==3 && Gu.started)return EFI_DEVICE_ERROR;
   CHECK(((FILE_FAKE *)f)->open);return app_mode==APP_FLUSH?EFI_DEVICE_ERROR:EFI_SUCCESS;
 }
 static EFI_STATUS EFIAPI file_position(EFI_FILE_PROTOCOL *f,UINT64 offset) {
-  FILE_FAKE *v=(FILE_FAKE *)f;CHECK(v->open && (v->kind==12 || v->kind==13));
+  FILE_FAKE *v=(FILE_FAKE *)f;CHECK(v->open && (v->kind==12));
   if(safety_case==13 && v->kind==12)return EFI_DEVICE_ERROR;
   CHECK(offset<=(v->kind==12?8192U:512U));v->position=(UINTN)offset;return EFI_SUCCESS;
 }
@@ -554,12 +551,19 @@ static EFI_STATUS EFIAPI connect(EFI_HANDLE h,EFI_HANDLE *drivers,EFI_DEVICE_PAT
   return EFI_SUCCESS;
 }
 static EFI_STATUS EFIAPI start_image(EFI_HANDLE h,UINTN *bytes,CHAR16 **data) {
+  if(strstr(report_text,"stage=normal-windows-handoff")) {
+    CHECK(h==H(14) && windows_loaded && !exclusive && bound);
+    CHECK(!disconnect_calls && !connect_calls && !fake.mmio_writes && !fake.maps && !fake.flrs);
+    CHECK(!files[3].open && !files[12].open);
+    CHECK(strstr(report_text,"stage=normal-windows-handoff"));
+    windows_started=1;longjmp(escape_halt,2);
+  }
   CHECK(h==H(14) && bytes && data && windows_loaded && !exclusive && !GuScreenDetached && bound && connect_calls==1);
   CHECK(!Gu.allocations && !fake.live_maps && !fake.live_buffers && Gu.quiesced && fake.flrs==1);
   CHECK((config[4]&4)==(captured_config[1]&4));
   CHECK(strstr(report_text,"POST-GOP SS0="));
   CHECK(strstr(report_text,"stage=before_StartImage") && !files[3].open);
-  CHECK(!files[12].open && lock_exists && lock_bytes>0);
+  CHECK(!files[12].open);
   CHECK(valid_checkpoints(NULL)==2);
   windows_started=1;longjmp(escape_halt,2);
 }
@@ -587,8 +591,8 @@ static void app_setup(enum app_case mode) {
   query_calls=0;query_allocation=NULL;prom_dump_calls=0;
   stability_reads=0;
   child_connect_calls=0;
-  journal_bytes=lock_bytes=journal_writes=0;lock_exists=safety_case==15;
-  memset(journal_data,0,sizeof(journal_data));memset(lock_data,0,sizeof(lock_data));
+  journal_bytes=journal_writes=0;
+  memset(journal_data,0,sizeof(journal_data));
   pci.Mem.Read=app_read_memory;
   disconnect_calls=0;bound=TRUE;
   ad106_leave_bme=ad106_post_gop_effective=FALSE;
@@ -681,10 +685,14 @@ int main(int argc,char **argv) {
     if(injected_case)fake.mode=(enum scenario)injected[i-basic_count];
     volatile EFI_STATUS result=EFI_ABORTED;
     int jumped=setjmp(escape_halt);if(!jumped)result=EfiMain(H(1),&st);
-    BOOLEAN success=(mode==APP_TIMEOUT || mode==APP_HANDOFF || mode==APP_HANDOFF_CONFIG || mode==APP_HANDOFF_CHILD || mode==APP_SELECTOR) &&
+    BOOLEAN success=(mode==APP_HANDOFF || mode==APP_HANDOFF_CONFIG || mode==APP_HANDOFF_CHILD || mode==APP_SELECTOR) &&
       (!injected_case || ad_success(injected[i-basic_count]));
+    if(mode==APP_TIMEOUT || mode==APP_ESCAPE) {
+      CHECK(jumped==2 && windows_started && !fake.mmio_writes && !fake.flrs && !disconnect_calls);
+      dispose_host_fixture();continue;
+    }
     if(success) {
-      CHECK(strstr(report_text,"AUTO START: countdown complete"));
+      CHECK(strstr(report_text,"MANUAL U: new attempt"));
       if(mode==APP_TIMEOUT)CHECK(!key_sent);
       CHECK(windows_started && jumped==2 && !halted && fake.flrs==1 && connect_calls==1);
       CHECK(fake.sec2_starts==1);
@@ -742,15 +750,22 @@ int main(int argc,char **argv) {
     dispose_host_fixture();captured_config[1]=original_command;
   }
   for(volatile unsigned failure=1;failure<=20;failure++) {
+    if(failure>=8 && failure<=10)continue; /* Removed lock I/O fault cases. */
     safety_case=(int)failure;extra_case=0;
     enum app_case mode=failure==17?APP_SHORT_WRITE:failure==18?APP_FLUSH:
       failure==19?APP_LOG_DIRTY:failure==20?APP_FINAL_LOG:APP_HANDOFF;
     app_setup(mode);
     volatile EFI_STATUS result=EFI_ABORTED;
     int jumped=setjmp(escape_halt);if(!jumped)result=EfiMain(H(1),&st);
+    if(failure==15) {
+      CHECK(jumped==2 && windows_started && fake.flrs==1 && disconnect_calls==1);
+      printf("AD106 explicit U without lock PASS\n");
+      dispose_host_fixture();
+      continue;
+    }
     CHECK(!windows_started && fake.gsp_starts<=1 && fake.sec2_starts<=1 && fake.flrs<=1);
     if(failure==11 || failure==12 || failure==16 || failure==19 || failure==20) {
-      CHECK(jumped==1 && halted && Gu.retained && disconnect_calls==1 && lock_exists);
+      CHECK(jumped==1 && halted && Gu.retained && disconnect_calls==1);
       CHECK(!(config[4]&4) && valid_checkpoints(NULL)>=1);
       if(failure==12 || failure==19 || failure==20) {
         CHECK(valid_checkpoints("phase=STOP_POWER_OFF")==1);
@@ -760,8 +775,6 @@ int main(int argc,char **argv) {
       CHECK(!jumped && EFI_ERROR(result) && !disconnect_calls && !fake.mmio_writes && !fake.maps);
       CHECK((config[4]&4)==(captured_config[1]&4));
       if(failure==14)CHECK(strstr(report_text,"Palit RTX4060Ti")); /* Console failure did not suppress disk. */
-      if(failure==15)CHECK(strstr(report_text,"BLOCKED: ATTEMPT.LCK"));
-      if(failure>=8 && failure<=10)CHECK(lock_exists); /* Failed lock commit still blocks a later boot. */
     }
     printf("AD106 safety fault %u: disconnect=%llu Windows=%d journal_valid=%u PASS\n",failure,(unsigned long long)disconnect_calls,windows_started,valid_checkpoints(NULL));
     if(failure==19) {
@@ -792,12 +805,14 @@ int main(int argc,char **argv) {
       CHECK(strstr(report_text,"enabled=0; inactive values not pinned across power-ons"));
       if(gate==10)CHECK(strstr(report_text,"cold stability sample=3/3 SS0=0x63012021"));
       if(gate==28)CHECK(strstr(report_text,"cold stability sample=3/3 SS0=0x63202021 SS1=0x7"));
+    } else if(gate==9) {
+      CHECK(jumped==2 && windows_started && !disconnect_calls && !fake.mmio_writes);
     } else if(gate==8 || gate==59) {
       CHECK(jumped==1 && halted && disconnect_calls==1 && Gu.retained && !(config[4]&4));
       CHECK(!fake.mmio_writes && !fake.maps && !fake.gsp_starts && !fake.sec2_starts);
     } else {
       CHECK(!jumped && EFI_ERROR(result) && !windows_started && !disconnect_calls);
-      CHECK(!fake.mmio_writes && !fake.maps && !fake.flrs && !lock_exists);
+      CHECK(!fake.mmio_writes && !fake.maps && !fake.flrs);
       CHECK((config[4]&4)==(captured_config[1]&4));
       if(gate>=29 && gate<=57)CHECK(strstr(report_text,"ss1_override_or_reserved=1"));
       if(gate==58)CHECK(strstr(report_text,"SS1 initial=0x3 current=0x7; refusing"));
@@ -811,7 +826,7 @@ int main(int argc,char **argv) {
     volatile EFI_STATUS result=EFI_ABORTED;
     int jumped=setjmp(escape_halt);if(!jumped)result=EfiMain(H(1),&st);
     (void)result;
-    CHECK(fake.flrs==1 && !Gu.allocations && !Gu.dma_count && lock_exists);
+    CHECK(fake.flrs==1 && !Gu.allocations && !Gu.dma_count);
     if(mode==0) {
       CHECK(jumped==2 && windows_started && Gu.unlock_matched);
       for(unsigned p=0;p<12;p++)CHECK(strstr(report_text,handoff_phases[p]));
@@ -837,7 +852,7 @@ int main(int argc,char **argv) {
     tree_case=(int)mode;extra_case=0;safety_case=0;app_setup(APP_HANDOFF);
     volatile EFI_STATUS result=EFI_ABORTED;
     int jumped=setjmp(escape_halt);if(!jumped)result=EfiMain(H(1),&st);
-    (void)result;CHECK(connect_calls==1 && fake.flrs==1 && !Gu.allocations && lock_exists);
+    (void)result;CHECK(connect_calls==1 && fake.flrs==1 && !Gu.allocations);
     if(mode==0 || mode==1 || mode==4 || mode==9) {
       CHECK(jumped==2 && windows_started && !halted && Gu.unlock_matched);
       CHECK(child_connect_calls==(mode==4?2:1));
@@ -856,5 +871,21 @@ int main(int argc,char **argv) {
   }
   tree_case=-1;
   for(int i=0;i<5;i++)free((VOID*)originals[i].firmware.data);
-  printf("%u AD106 app + core scenarios passed; firmware/PCI/MMIO/Windows simulated.\n",basic_count+extra_count+127);return 0;
+  for(volatile int failure=0;failure<2;failure++) {
+    safety_case=15;extra_case=failure?4:3;app_setup(APP_HANDOFF);
+    int jumped=setjmp(escape_halt);EFI_STATUS result=EFI_SUCCESS;
+    if(!jumped)result=EfiMain(H(1),&st);
+    CHECK(!jumped && EFI_ERROR(result) && !windows_started && !windows_loaded);
+    CHECK(!disconnect_calls && !fake.mmio_writes && !fake.maps && !fake.flrs);
+    printf("AD106 manual boot loader rejection %d PASS\n",failure);
+  }
+  for(volatile int normal=0;normal<2;normal++) {
+    safety_case=0;extra_case=0;
+    app_setup(normal%2?APP_ESCAPE:APP_TIMEOUT);
+    int jumped=setjmp(escape_halt);if(!jumped)EfiMain(H(1),&st);
+    CHECK(jumped==2 && windows_started && !fake.mmio_writes && !fake.flrs && !disconnect_calls);
+    printf("AD106 normal Windows boot timeout/escape %d PASS\n",normal);
+    dispose_host_fixture();
+  }
+  printf("%u AD106 app + core scenarios passed; firmware/PCI/MMIO/Windows simulated.\n",basic_count+extra_count+128);return 0;
 }

@@ -174,7 +174,7 @@ EFI_STATUS GuIoOpen(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
     if(status!=EFI_NOT_FOUND)return status;
     status=Run->Open(Run,&Report,L"REPORT.TXT",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
     if(EFI_ERROR(status) || !Report)return EFI_DEVICE_ERROR;
-    GuLog("Palit RTX4060Ti AD106 16GB experimental port v0.2.5\nRUN%02u\nOne U: WPR_CFG -> FBPA -> WPR -> FEAT; one SEC2 launch for all four; require marker+HALT+WPR_CFG/WPR/FEAT readback; FBPA mismatch nonfatal. Log SS0/SS1 outcomes -> verified FLR/GOP recovery -> Windows even on selector mismatch. Hardware behavior on this board is untested. Profile pinned to AD106 RUN000. No VBIOS flash or boot-variable writes.\n",(unsigned)slot);
+    GuLog("Palit RTX4060Ti AD106 16GB experimental port v0.2.9\nRUN%02u\nManual U attempt: WPR_CFG -> FBPA -> WPR -> FEAT; one SEC2 launch for all four; require marker+HALT+WPR_CFG/WPR/FEAT readback; FBPA mismatch nonfatal. Log SS0/SS1 outcomes -> verified FLR/GOP recovery -> Windows even on selector mismatch. Hardware behavior on this board is untested. Profile pinned to AD106 RUN000. No VBIOS flash or boot-variable writes.\n",(unsigned)slot);
     GuLogText("PIO readback is not an execution gate. This path does not independently verify TCM contents; FWSEC scratch/WPR results are required.\n");
     if(!GuLogReady())return EFI_DEVICE_ERROR;
     union {EFI_FILE_SYSTEM_INFO info;UINT8 bytes[512];} volume;UINTN size=sizeof(volume);
@@ -191,32 +191,9 @@ EFI_STATUS GuIoOpen(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
     status=GuCheckpoint("PREFLIGHT_STORAGE_SLOT_1",EFI_SUCCESS);if(EFI_ERROR(status))return status;
     status=Parent->Flush(Parent);if(EFI_ERROR(status))return status;
     status=Run->Flush(Run);if(EFI_ERROR(status))return status;
-    status=Parent->Open(Parent,&existing,L"ATTEMPT.LCK",EFI_FILE_MODE_READ,0);
-    if(!EFI_ERROR(status)) {
-      if(existing)existing->Close(existing);
-      GuLogText("BLOCKED: ATTEMPT.LCK exists. Review prior logs and power off before deliberately enabling another attempt.\n");
-      return EFI_ALREADY_STARTED;
-    }
-    if(status!=EFI_NOT_FOUND)return status;
     return GuLogReady()?EFI_SUCCESS:EFI_DEVICE_ERROR;
   }
   return EFI_VOLUME_FULL;
-}
-EFI_STATUS GuLockAttempt(VOID) {
-  if(!GuLogReady() || !Journal || !Parent || Gu.armed)return EFI_NOT_READY;
-  EFI_FILE_PROTOCOL *file=NULL;
-  EFI_STATUS s=Parent->Open(Parent,&file,L"ATTEMPT.LCK",EFI_FILE_MODE_READ,0);
-  if(!EFI_ERROR(s)){if(file)file->Close(file);return EFI_ALREADY_STARTED;}
-  if(s!=EFI_NOT_FOUND)return s;
-  s=Parent->Open(Parent,&file,L"ATTEMPT.LCK",EFI_FILE_MODE_READ|EFI_FILE_MODE_WRITE|EFI_FILE_MODE_CREATE,0);
-  if(EFI_ERROR(s)||!file)return EFI_ERROR(s)?s:EFI_DEVICE_ERROR;
-  static const char text[]="AD106 v0.2.6: automatic countdown complete. One attempt reserved.\nDo not remove this lock until logs are reviewed and the machine has been powered off.\n";
-  s=WriteChecked(file,0,text,sizeof(text)-1);
-  EFI_STATUS closed=file->Close(file);if(!EFI_ERROR(s))s=closed;
-  if(!EFI_ERROR(s))s=Parent->Flush(Parent);
-  if(EFI_ERROR(s)){LogStatus(s);return s;}
-  GuLogText("Persistent one-attempt lock committed and read back: ATTEMPT.LCK\n");
-  return GuLogReady()?GuCheckpoint("ATTEMPT_LOCKED",EFI_SUCCESS):EFI_DEVICE_ERROR;
 }
 EFI_STATUS GuSavePromDump(const VOID *Data,UINTN Size) {
   if(!Run || !Data || Size!=1048576)return EFI_INVALID_PARAMETER;

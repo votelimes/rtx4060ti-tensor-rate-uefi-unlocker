@@ -10,9 +10,15 @@ It does not enable physically absent cores or increase VRAM.
 
 ## Status
 
+- **0.2.9 (current source):** manual U within five seconds; timeout or Esc boots
+  Windows without GPU changes. The persistent attempt-file mechanism is removed.
+  **180 application/core simulation scenarios passed with ASan/UBSan.** The user
+  supplied a successful after-unlock benchmark on 2026-11-01: FP16/FP32 reached
+  91.5 TFLOPS versus 45.1 in the preceding run. Fresh UEFI logs for this version
+  have not yet been reviewed. See [the new results](docs/VALIDATION-2026-11-01.md).
 - **0.2.5:** one successful physical unlock boot, GOP recovery and Windows handoff.
   Selectors and effective readout matched after recovery. CUDA/PyTorch workloads ran.
-- **0.2.6 (this source):** automatic start after a five-second cancellation window;
+- **0.2.6:** automatic start after a five-second cancellation window;
   179 application simulation scenarios passed with ASan/UBSan. **Physically verified
   on 2026-10-28 (RUN08):** automatic countdown, model/VRAM checks, unlock and GOP
   recovery completed; the user confirmed Windows boot and faster PyTorch workloads.
@@ -79,17 +85,16 @@ Do not format a disk or overwrite an internal EFI system partition for this test
    enabled or unreadable Secure Boot state; it does not change that setting.
 2. Shut the PC down and remove mains power for ten seconds before a fresh attempt.
 3. Select the USB's **UEFI** entry in the one-time boot menu.
-4. Preflight checks run and Windows is preloaded. After `AUTO START`, a five-second
-   countdown begins. **No U confirmation is needed. Esc cancels.** Keyboard-read
-   errors stop the attempt; pressing U does not skip the countdown.
-5. A durable `ATTEMPT.LCK` is created before GPU driver release. If all transaction
-   and recovery checks pass, control transfers to Windows.
-6. Keep that Windows session running for the after-unlock benchmark.
+4. Windows is preloaded. At READY, press **U** within five seconds to request an unlock.
+   Otherwise Windows starts normally without GPU operations; Esc skips immediately.
+5. U explicitly requests a new attempt. All device, ROM, cold-state and ownership
+   checks still apply before driver release. No attempt lock is read or written;
+   both the report and checksummed safety journal are retained per run.
+6. For hibernation resume, let the timeout expire or press Esc. Persistence of
+   acceleration across hibernation is not established. After a failed attempt,
+   review logs and fully power off before deliberately pressing U again.
 
-**Automatic start is not automatic retry.** The lock blocks later attempts,
-including after a successful boot. Review and save the logs, power off, and only
-then deliberately archive the lock before another authorized experiment. The
-program never clears it itself. BootOrder/BootNext and VBIOS are not changed.
+No automatic unlock or retry occurs. BootOrder/BootNext and VBIOS are not changed.
 
 ## Logs
 

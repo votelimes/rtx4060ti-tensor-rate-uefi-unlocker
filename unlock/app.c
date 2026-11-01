@@ -277,18 +277,18 @@ static EFI_STATUS PromCheck(VOID) {
 static EFI_STATUS Arm(VOID) {
   if(!Table->ConIn || !Table->ConIn->Reset || !Table->ConIn->ReadKeyStroke)return EFI_UNSUPPORTED;
   EFI_STATUS status=Table->ConIn->Reset(Table->ConIn,FALSE);if(EFI_ERROR(status))return status;
-  GuLogText("READY: Palit RTX 4060 Ti AD106 16GB EXPERIMENT v0.2.6 / Windows preloaded.\n");
-  GuLogText("AUTO START in 5 seconds. Esc cancels. No confirmation required. One attempt only.\n");
+  GuLogText("READY: Palit RTX 4060 Ti AD106 16GB EXPERIMENT v0.2.9 / Windows preloaded.\n");
+  GuLogText("Press U within 5 seconds to unlock. Otherwise Windows starts normally. Esc skips unlock.\n");
   for(UINTN i=0;i<50;i++) {
     if(!GuLogReady())return EFI_DEVICE_ERROR;
     EFI_INPUT_KEY key;status=Table->ConIn->ReadKeyStroke(Table->ConIn,&key);
     if(!EFI_ERROR(status)) {
       if(key.ScanCode==0x17 || key.UnicodeChar==27)return EFI_ABORTED;
+      if(key.UnicodeChar=='u' || key.UnicodeChar=='U'){GuLogText("MANUAL U: new attempt explicitly requested.\n");return EFI_SUCCESS;}
     } else if(status!=EFI_NOT_READY)return status;
     GuStall(100000);
   }
-  GuLogText("AUTO START: countdown complete; revalidate card before persistent lock and driver release.\n");
-  return GuLogReady()?EFI_SUCCESS:EFI_DEVICE_ERROR;
+  return GuLogReady()?EFI_TIMEOUT:EFI_DEVICE_ERROR;
 }
 static VOID PausePreflightFailure(VOID) {
   if(GuScreenDetached || Gu.started || !Table->ConIn || !Table->ConIn->ReadKeyStroke)return;
@@ -337,6 +337,7 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
   Table=St;GuInit(St->BootServices,NULL);Gu.image=Image;Gu.display_check=DisplayCheck;Gu.checkpoint=GuCheckpoint;
   memset(&PendingOwner,0,sizeof(PendingOwner));
   Stage="usb-log";EFI_STATUS status=GuIoOpen(Image,St);BOOLEAN attempted=FALSE,release_attempted=FALSE;
+  BOOLEAN bypass=FALSE;
   if(EFI_ERROR(status))goto finish;
   UINT8 secure=0xff;UINTN bytes=1;
   Stage="secure-boot";
@@ -344,6 +345,14 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
   if(EFI_ERROR(status) || bytes!=1 || secure){status=EFI_SECURITY_VIOLATION;goto finish;}
   status=Step(status);if(EFI_ERROR(status))goto finish;
   Stage="watchdog";status=Step(Gu.bs->SetWatchdogTimer(0,0,0,NULL));if(EFI_ERROR(status))goto finish;
+  Stage="windows-preload";status=Step(PreloadWindows());if(EFI_ERROR(status))goto finish;
+  Stage="arming";status=Arm();
+  if(status==EFI_TIMEOUT || status==EFI_ABORTED) {
+    bypass=TRUE;status=EFI_SUCCESS;Stage="normal-windows-handoff";
+    GuLogText("No unlock requested. Starting Windows without GPU changes.\n");
+    goto finish;
+  }
+  status=Step(status);if(EFI_ERROR(status))goto finish;
   Stage="target";status=Step(FindTarget());if(EFI_ERROR(status))goto finish;
   Stage="display";Gu.display_ok=DisplayCheck();status=Step(Gu.display_ok?EFI_SUCCESS:EFI_UNSUPPORTED);if(EFI_ERROR(status))goto finish;
   Stage="ownership";status=GuClaimController();
@@ -358,16 +367,13 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE Image,EFI_SYSTEM_TABLE *St) {
   Stage="cold-state";status=Step(ColdCheck());if(EFI_ERROR(status))goto finish;
   Stage="prom";status=Step(PromCheck());if(EFI_ERROR(status))goto finish;
   Stage="assets";status=Step(GuLoadAssets());if(EFI_ERROR(status))goto finish;
-  Stage="windows-preload";status=Step(PreloadWindows());if(EFI_ERROR(status))goto finish;
-  Stage="arming";status=Step(Arm());if(EFI_ERROR(status))goto finish;
   Stage="armed-config";status=Step(ConfigCheck(FALSE));if(EFI_ERROR(status))goto finish;
   Stage="armed-display";Gu.display_ok=DisplayCheck();status=Step(Gu.display_ok?EFI_SUCCESS:EFI_UNSUPPORTED);if(EFI_ERROR(status))goto finish;
   Stage="armed-cold-state";status=Step(ColdCheck());if(EFI_ERROR(status))goto finish;
-  Stage="persistent-attempt-lock";status=Step(GuLockAttempt());if(EFI_ERROR(status))goto finish;
   if(PendingOwner.agent) {
     GU_RELEASE_OWNER current;
     Stage="owner-recheck";
-    GuLogText("Automatic countdown complete: release RTX firmware driver once, then revalidate.\n");
+    GuLogText("Manual U accepted: release RTX firmware driver once, then revalidate.\n");
     status=GuCheckpoint("BEFORE_DRIVER_RELEASE",EFI_SUCCESS);if(EFI_ERROR(status))goto finish;
     if(!GuLogReady()){status=EFI_DEVICE_ERROR;goto finish;}
     /* Durable intent precedes the last owner snapshot. No file IO between a
@@ -430,13 +436,14 @@ finish:
     if(EFI_ERROR(closed)){if(release_attempted)ReleaseHalt(closed,attempted);if(Gu.started)Halt();status=closed;}else Gu.owned=FALSE;
   }
   GuReleaseAssets();
-  if(!EFI_ERROR(status) && attempted) {
-    GuConsole("GPU restored after FLR and GOP reconnect; see UNLOCK_MATCHED in log. Starting Windows.\n");
+  if(!EFI_ERROR(status) && (attempted || bypass)) {
+    if(bypass)GuConsole("Starting Windows without GPU changes.\n");
+    else GuConsole("GPU restored after FLR and GOP reconnect; see UNLOCK_MATCHED in log. Starting Windows.\n");
     UINTN bytes=0;CHAR16 *data=NULL;
     status=Gu.bs->StartImage(WindowsImage,&bytes,&data);
     if(data)GuFree(data);
     /* Returning after a hardware attempt could permit accidental rerun. */
-    GuScreenDetached=TRUE;Halt();
+    if(attempted){GuScreenDetached=TRUE;Halt();}
   }
   else GuConsole("Attempt cancelled or rejected. Returning without another attempt.\n");
   if(WindowsImage)Gu.bs->UnloadImage(WindowsImage);

@@ -37,9 +37,10 @@
   "handoff_has_enforced_timeout": false,
   "handoff_tree_max_nodes": 16,
   "handoff_tree_max_depth": 4,
-  "automatic_start": true,
+  "automatic_start": false,
   "start_delay_seconds": 5,
   "escape_cancels": true,
-  "persistent_attempt_lock": true,
-  "board_scope": "Palit 1569:f314 with captured ROM, not all 4060 Ti boards"
+  "board_scope": "Palit 1569:f314 with captured ROM, not all 4060 Ti boards",
+  "manual_key": "U",
+  "timeout_action": "start Windows without GPU changes"
 }
